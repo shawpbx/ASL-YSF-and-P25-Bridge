@@ -34,27 +34,36 @@ export const AudioTranscodingView: React.FC<AudioTranscodingViewProps> = ({
   const [jitterBufferMs, setJitterBufferMs] = useState(config.jitterBufferMs);
   const [timeoutTimerSec, setTimeoutTimerSec] = useState(config.timeoutTimerSec);
 
+  const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
 
-  // Sync local form if server config updates externally
+  const lastSyncedAudioRef = useRef<string>(JSON.stringify(config));
+
+  // Sync local form only if server config genuinely changed AND user has no unsaved edits
   useEffect(() => {
-    setVocoderEngine(config.vocoderEngine);
-    setAmbeUsbDevice(config.ambeUsbDevice);
-    setAmbeBaudRate(config.ambeBaudRate);
-    setMd380EmuPort(config.md380EmuPort);
-    setYsfMode(config.ysfMode);
-    setP25Nac(config.p25Nac);
-    setAslGainYsf(config.aslGainYsf);
-    setUsrpGainYsf(config.usrpGainYsf);
-    setTlvGainYsf(config.tlvGainYsf);
-    setAslGainP25(config.aslGainP25);
-    setUsrpGainP25(config.usrpGainP25);
-    setTlvGainP25(config.tlvGainP25);
-    setUseAgc(config.useAgc);
-    setJitterBufferMs(config.jitterBufferMs);
-    setTimeoutTimerSec(config.timeoutTimerSec);
-  }, [config]);
+    const incomingJson = JSON.stringify(config);
+    if (incomingJson !== lastSyncedAudioRef.current) {
+      lastSyncedAudioRef.current = incomingJson;
+      if (!isDirty) {
+        setVocoderEngine(config.vocoderEngine);
+        setAmbeUsbDevice(config.ambeUsbDevice);
+        setAmbeBaudRate(config.ambeBaudRate);
+        setMd380EmuPort(config.md380EmuPort);
+        setYsfMode(config.ysfMode);
+        setP25Nac(config.p25Nac);
+        setAslGainYsf(config.aslGainYsf);
+        setUsrpGainYsf(config.usrpGainYsf);
+        setTlvGainYsf(config.tlvGainYsf);
+        setAslGainP25(config.aslGainP25);
+        setUsrpGainP25(config.usrpGainP25);
+        setTlvGainP25(config.tlvGainP25);
+        setUseAgc(config.useAgc);
+        setJitterBufferMs(config.jitterBufferMs);
+        setTimeoutTimerSec(config.timeoutTimerSec);
+      }
+    }
+  }, [config, isDirty]);
 
   // Calibrated 3-channel dBFS Audio Level Meter Canvas
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -197,6 +206,7 @@ export const AudioTranscodingView: React.FC<AudioTranscodingViewProps> = ({
         jitterBufferMs,
         timeoutTimerSec,
       });
+      setIsDirty(false);
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 3000);
     } finally {
@@ -213,6 +223,7 @@ export const AudioTranscodingView: React.FC<AudioTranscodingViewProps> = ({
     setTlvGainP25(0.35);
     setUseAgc(true);
     setJitterBufferMs(40);
+    setIsDirty(true);
   };
 
   return (
@@ -259,7 +270,11 @@ export const AudioTranscodingView: React.FC<AudioTranscodingViewProps> = ({
         </div>
       </section>
 
-      <form onSubmit={handleSave} className="space-y-6">
+      <form
+        onSubmit={handleSave}
+        onChange={() => setIsDirty(true)}
+        className="space-y-6"
+      >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Vocoder Engine & Digital Mode Settings */}
           <section className="bg-white border border-slate-200 rounded-lg">
@@ -278,7 +293,10 @@ export const AudioTranscodingView: React.FC<AudioTranscodingViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setVocoderEngine('md380-emu')}
+                    onClick={() => {
+                      setVocoderEngine('md380-emu');
+                      setIsDirty(true);
+                    }}
                     className={`p-3.5 text-left rounded-md border transition-colors ${
                       vocoderEngine === 'md380-emu'
                         ? 'border-blue-700 bg-blue-50/50 text-slate-900'
@@ -292,7 +310,10 @@ export const AudioTranscodingView: React.FC<AudioTranscodingViewProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setVocoderEngine('ambe-usb')}
+                    onClick={() => {
+                      setVocoderEngine('ambe-usb');
+                      setIsDirty(true);
+                    }}
                     className={`p-3.5 text-left rounded-md border transition-colors ${
                       vocoderEngine === 'ambe-usb'
                         ? 'border-blue-700 bg-blue-50/50 text-slate-900'

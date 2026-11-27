@@ -1,6 +1,6 @@
 # Repository: https://github.com/shawpbx/ASL-YSF-and-P25-Bridge
 # Dockhand / CasaOS / Portainer ready — pulls prebuilt GHCR image (no local Dockerfile required)
-# Connects over USRP UDP to your Remote AllStarLink Server (Node 20800)
+# Replace the placeholder environment variables below with your own callsign, node, and reflector IDs.
 
 networks:
   default:
@@ -11,10 +11,10 @@ networks:
 services:
   asl-crossmode-bridge:
     image: ghcr.io/shawpbx/asl-ysf-and-p25-bridge:latest
-    container_name: asl20800-crossmode-bridge
+    container_name: asl-crossmode-bridge
     restart: unless-stopped
     depends_on:
-      - tg9510
+      - p25reflector
       - ysfreflector-with-dashboard
     networks:
       - default
@@ -27,12 +27,13 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - REMOTE_ASL_HOST=192.168.1.100
-      - ASL_NODE=20800
-      - YSF_REFLECTOR=95100
-      - YSF_REFLECTOR_NAME=IEARG
-      - P25_REFLECTOR=9510
-      - BRIDGE_CALLSIGN=KE6UPI
-      - BRIDGE_DMR_ID=3100001
+      - ASL_NODE=12345
+      - YSF_REFLECTOR=10000
+      - YSF_REFLECTOR_NAME=MY-YSF
+      - YSF_REFLECTOR_DESCRIPTION=My YSF Reflector
+      - P25_REFLECTOR=10100
+      - BRIDGE_CALLSIGN=N0CALL
+      - BRIDGE_DMR_ID=1234567
     volumes:
       - bridge_config:/opt/bridge/config
       - bridge_logs:/var/log/dvswitch
@@ -43,8 +44,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  tg9510:
-    container_name: TG9510
+  p25reflector:
+    container_name: P25Reflector-10100
     image: corrosive/docker-p25reflector
     networks:
       - default
@@ -60,8 +61,8 @@ services:
     container_name: ysfreflector-with-dashboard
     image: ghcr.io/neilbartley/ysfreflector-with-dashboard:latest
     environment:
-      REFLECTOR_DESCRIPTION: KE6UPI
-      REFLECTOR_NAME: IEARG
+      REFLECTOR_DESCRIPTION: My YSF Reflector
+      REFLECTOR_NAME: MY-YSF
     networks:
       - default
     ports:

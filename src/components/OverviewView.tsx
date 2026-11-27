@@ -27,7 +27,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const { config, daemons, activeTx, audioLevels, qsoHistory, metrics } = state;
 
   const [testSource, setTestSource] = useState<NetworkMode>('ASL');
-  const [testCallsign, setTestCallsign] = useState<string>(config.callsign || 'W1AW');
+  const [testCallsign, setTestCallsign] = useState<string>(config.callsign || 'N0CALL');
   const [testDuration, setTestDuration] = useState<number>(6);
   const [submittingPtt, setSubmittingPtt] = useState(false);
 

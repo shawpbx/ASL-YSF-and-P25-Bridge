@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import JSZip from 'jszip';
@@ -21,17 +22,61 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
+// Resolve writable config persistence path (Docker volume /var/lib/dvswitch or local fallback)
+const CONFIG_STORAGE_PATH = fs.existsSync('/var/lib/dvswitch')
+  ? '/var/lib/dvswitch/bridge-config.json'
+  : path.resolve(__dirname, '.bridge-config.json');
+
+function loadInitialConfig(): BridgeConfig {
+  const envDefaults: BridgeConfig = {
+    ...DEFAULT_BRIDGE_CONFIG,
+    aslHost: process.env.REMOTE_ASL_HOST || DEFAULT_BRIDGE_CONFIG.aslHost,
+    aslNode: process.env.ASL_NODE || DEFAULT_BRIDGE_CONFIG.aslNode,
+    ysfReflectorId: process.env.YSF_REFLECTOR || DEFAULT_BRIDGE_CONFIG.ysfReflectorId,
+    ysfReflectorName: process.env.YSF_REFLECTOR_NAME || DEFAULT_BRIDGE_CONFIG.ysfReflectorName,
+    ysfReflectorDescription:
+      process.env.YSF_REFLECTOR_DESCRIPTION || DEFAULT_BRIDGE_CONFIG.ysfReflectorDescription,
+    p25ReflectorId: process.env.P25_REFLECTOR || DEFAULT_BRIDGE_CONFIG.p25ReflectorId,
+    callsign: process.env.BRIDGE_CALLSIGN || DEFAULT_BRIDGE_CONFIG.callsign,
+    dmrId: process.env.BRIDGE_DMR_ID || DEFAULT_BRIDGE_CONFIG.dmrId,
+  };
+  try {
+    if (fs.existsSync(CONFIG_STORAGE_PATH)) {
+      const saved = JSON.parse(fs.readFileSync(CONFIG_STORAGE_PATH, 'utf8')) as Partial<BridgeConfig>;
+      return { ...envDefaults, ...saved };
+    }
+  } catch {
+    // Fall back to env/default config if persisted file is unreadable
+  }
+  return envDefaults;
+}
+
+function persistConfigToDisk(nextConfig: BridgeConfig): void {
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_STORAGE_PATH), { recursive: true });
+    fs.writeFileSync(CONFIG_STORAGE_PATH, JSON.stringify(nextConfig, null, 2), 'utf8');
+  } catch {
+    // Ignore disk write errors on read-only filesystems
+  }
+
+  // Also sync generated config/*.ini and Hosts.txt into /opt/bridge/config when running in Docker
+  try {
+    if (fs.existsSync('/opt/bridge/config')) {
+      const files = generateAllBridgeFiles(nextConfig);
+      for (const file of files) {
+        if (file.path.startsWith('config/')) {
+          const target = path.join('/opt/bridge/config', path.basename(file.path));
+          fs.writeFileSync(target, file.content, 'utf8');
+        }
+      }
+    }
+  } catch {
+    // Ignore if /opt/bridge/config is mounted read-only
+  }
+}
+
 // Runtime state of the Dockerized cross-mode bridge controller (Remote AllStarLink via USRP)
-let config: BridgeConfig = {
-  ...DEFAULT_BRIDGE_CONFIG,
-  aslHost: process.env.REMOTE_ASL_HOST || DEFAULT_BRIDGE_CONFIG.aslHost,
-  aslNode: process.env.ASL_NODE || DEFAULT_BRIDGE_CONFIG.aslNode,
-  ysfReflectorId: process.env.YSF_REFLECTOR || DEFAULT_BRIDGE_CONFIG.ysfReflectorId,
-  ysfReflectorName: process.env.YSF_REFLECTOR_NAME || DEFAULT_BRIDGE_CONFIG.ysfReflectorName,
-  p25ReflectorId: process.env.P25_REFLECTOR || DEFAULT_BRIDGE_CONFIG.p25ReflectorId,
-  callsign: process.env.BRIDGE_CALLSIGN || DEFAULT_BRIDGE_CONFIG.callsign,
-  dmrId: process.env.BRIDGE_DMR_ID || DEFAULT_BRIDGE_CONFIG.dmrId,
-};
+let config: BridgeConfig = loadInitialConfig();
 const bootTimeMs = Date.now() - 1000 * (3 * 86400 + 14 * 3600 + 22 * 60 + 18); // 3d 14h 22m
 let totalRelays24h = 148;
 
@@ -54,35 +99,35 @@ let daemons: DaemonProcess[] = [
     id: 'analog_bridge_ysf',
     name: 'Analog_Bridge (YSF)',
     binary: '/opt/Analog_Bridge/Analog_Bridge',
-    role: '8kHz PCM <-> AMBE+2 (YSFN) audio transcoder for YSF 95100',
+    role: `8kHz PCM <-> AMBE+2 (${config.ysfMode}) audio transcoder for YSF ${config.ysfReflectorId}`,
     leg: 'YSF',
     status: 'running',
     pid: 1145,
     uptimeSec: 310930,
     cpuPercent: 1.9,
     memMb: 14.8,
-    ports: 'USRP 32001/34001 · TLV 31103/31100',
+    ports: `USRP ${config.ysfUsrpTxPort}/${config.ysfUsrpRxPort} · TLV ${config.ysfTlvTxPort}/${config.ysfTlvRxPort}`,
     configFile: 'config/Analog_Bridge_YSF.ini',
   },
   {
     id: 'analog_bridge_p25',
     name: 'Analog_Bridge (P25)',
     binary: '/opt/Analog_Bridge/Analog_Bridge',
-    role: '8kHz PCM <-> IMBE 7200bps audio transcoder for P25 9510',
+    role: `8kHz PCM <-> IMBE 7200bps audio transcoder for P25 ${config.p25ReflectorId}`,
     leg: 'P25',
     status: 'running',
     pid: 1152,
     uptimeSec: 310930,
     cpuPercent: 2.1,
     memMb: 16.1,
-    ports: 'USRP 32002/34002 · TLV 34103/34100',
+    ports: `USRP ${config.p25UsrpTxPort}/${config.p25UsrpRxPort} · TLV ${config.p25TlvTxPort}/${config.p25TlvRxPort}`,
     configFile: 'config/Analog_Bridge_P25.ini',
   },
   {
     id: 'mmdvm_bridge',
     name: 'MMDVM_Bridge',
     binary: '/opt/MMDVM_Bridge/MMDVM_Bridge',
-    role: 'Multi-mode digital voice protocol router (YSF + P25 NAC 293)',
+    role: `Multi-mode digital voice protocol router (YSF + P25 NAC ${config.p25Nac})`,
     leg: 'CORE',
     status: 'running',
     pid: 1126,
@@ -96,56 +141,56 @@ let daemons: DaemonProcess[] = [
     id: 'ysfgateway',
     name: 'YSFGateway',
     binary: '/opt/YSFGateway/YSFGateway',
-    role: 'Yaesu System Fusion reflector link pinned to YSF 95100',
+    role: `Yaesu System Fusion reflector link pinned to YSF ${config.ysfReflectorId}`,
     leg: 'YSF',
     status: 'running',
     pid: 1134,
     uptimeSec: 310932,
     cpuPercent: 0.6,
     memMb: 9.2,
-    ports: 'UDP 4200 -> 42000',
+    ports: `UDP 4200 -> ${config.ysfReflectorPort}`,
     configFile: 'config/YSFGateway.ini',
   },
   {
     id: 'p25gateway',
     name: 'P25Gateway',
     binary: '/opt/P25Gateway/P25Gateway',
-    role: 'APCO Project 25 reflector link statically pinned to P25 9510',
+    role: `APCO Project 25 reflector link statically pinned to P25 ${config.p25ReflectorId}`,
     leg: 'P25',
     status: 'running',
     pid: 1139,
     uptimeSec: 310932,
     cpuPercent: 0.5,
     memMb: 8.8,
-    ports: 'UDP 42020 -> 41000',
+    ports: `UDP 42020 -> ${config.p25ReflectorPort}`,
     configFile: 'config/P25Gateway.ini',
   },
   {
     id: 'ysfreflector-with-dashboard',
-    name: 'YSFReflector Container (IEARG)',
+    name: `YSFReflector Container (${config.ysfReflectorName})`,
     binary: 'ghcr.io/neilbartley/ysfreflector-with-dashboard:latest',
-    role: 'YSF Reflector 95100 (IEARG / KE6UPI) + Web Dashboard on port 42080',
+    role: `YSF Reflector ${config.ysfReflectorId} (${config.ysfReflectorName} / ${config.ysfReflectorDescription}) + Web Dashboard on port ${config.ysfDashboardPort}`,
     leg: 'YSF',
     status: 'running',
     pid: 2041,
     uptimeSec: 310940,
     cpuPercent: 0.8,
     memMb: 32.4,
-    ports: 'UDP 42000 · TCP 42080->80',
+    ports: `UDP ${config.ysfReflectorPort} · TCP ${config.ysfDashboardPort}->80`,
     configFile: 'docker-compose.yml',
   },
   {
     id: 'tg9510',
-    name: 'P25Reflector Container (TG9510)',
+    name: `P25Reflector Container (TG${config.p25ReflectorId})`,
     binary: 'corrosive/docker-p25reflector',
-    role: 'P25 Reflector TG9510 container with /var/log/P25Reflector volume',
+    role: `P25 Reflector TG${config.p25ReflectorId} container with ${config.p25LogPath} volume`,
     leg: 'P25',
     status: 'running',
     pid: 2058,
     uptimeSec: 310940,
     cpuPercent: 0.4,
     memMb: 14.2,
-    ports: 'UDP 41000->41000',
+    ports: `UDP ${config.p25ReflectorPort}->41000`,
     configFile: 'docker-compose.yml',
   },
 ];
@@ -169,12 +214,12 @@ let qsoHistory: QsoRecord[] = [
     id: 'qso-101',
     timestamp: formatIsoTime(now - 1000 * 145),
     sourceMode: 'ASL',
-    callsign: 'K2NVO',
-    radioId: 'Node 54210 -> 20800',
-    targetSummary: 'YSF 95100 · P25 9510',
+    callsign: 'N0CALL',
+    radioId: `Remote Node ${config.aslNode}`,
+    targetSummary: `YSF ${config.ysfReflectorId} · P25 ${config.p25ReflectorId}`,
     transcodePath: 'PCM 8kHz -> AMBE+2 & IMBE',
-    durationSec: 28.4,
-    peakDb: -4.2,
+    durationSec: 24.2,
+    peakDb: -4.4,
     berPct: 0.0,
     status: 'Completed',
   },
@@ -182,65 +227,26 @@ let qsoHistory: QsoRecord[] = [
     id: 'qso-102',
     timestamp: formatIsoTime(now - 1000 * 412),
     sourceMode: 'YSF',
-    callsign: 'N7TRK',
-    radioId: '3148221',
-    targetSummary: 'ASL 20800 · P25 9510',
+    callsign: 'W0TEST',
+    radioId: '1234501',
+    targetSummary: `ASL ${config.aslNode} · P25 ${config.p25ReflectorId}`,
     transcodePath: 'AMBE+2 (DN) -> PCM -> IMBE',
-    durationSec: 19.7,
-    peakDb: -5.8,
-    berPct: 0.4,
+    durationSec: 18.6,
+    peakDb: -5.6,
+    berPct: 0.3,
     status: 'Completed',
   },
   {
     id: 'qso-103',
     timestamp: formatIsoTime(now - 1000 * 980),
     sourceMode: 'P25',
-    callsign: 'W9P25',
-    radioId: '3117402',
-    targetSummary: 'ASL 20800 · YSF 95100',
+    callsign: 'K0DEMO',
+    radioId: '1234502',
+    targetSummary: `ASL ${config.aslNode} · YSF ${config.ysfReflectorId}`,
     transcodePath: 'IMBE 7200 -> PCM -> AMBE+2',
-    durationSec: 41.2,
-    peakDb: -3.6,
+    durationSec: 32.1,
+    peakDb: -3.9,
     berPct: 0.2,
-    status: 'Completed',
-  },
-  {
-    id: 'qso-104',
-    timestamp: formatIsoTime(now - 1000 * 1640),
-    sourceMode: 'ASL',
-    callsign: 'KD8MQR',
-    radioId: 'Node 20800 Local',
-    targetSummary: 'YSF 95100 · P25 9510',
-    transcodePath: 'PCM 8kHz -> AMBE+2 & IMBE',
-    durationSec: 12.1,
-    peakDb: -6.1,
-    berPct: 0.0,
-    status: 'Completed',
-  },
-  {
-    id: 'qso-105',
-    timestamp: formatIsoTime(now - 1000 * 2710),
-    sourceMode: 'YSF',
-    callsign: 'VE3BXR',
-    radioId: '3024119',
-    targetSummary: 'ASL 20800 · P25 9510',
-    transcodePath: 'AMBE+2 (DN) -> PCM -> IMBE',
-    durationSec: 34.8,
-    peakDb: -4.9,
-    berPct: 0.7,
-    status: 'Completed',
-  },
-  {
-    id: 'qso-106',
-    timestamp: formatIsoTime(now - 1000 * 3920),
-    sourceMode: 'P25',
-    callsign: 'AA4JX',
-    radioId: '3112980',
-    targetSummary: 'ASL 20800 · YSF 95100',
-    transcodePath: 'IMBE 7200 -> PCM -> AMBE+2',
-    durationSec: 16.5,
-    peakDb: -5.2,
-    berPct: 0.3,
     status: 'Completed',
   },
 ];
@@ -286,7 +292,7 @@ let logs: LogEntry[] = [
     timestamp: formatIsoTime(now - 1000 * 145),
     service: 'mmdvm_bridge',
     level: 'INFO',
-    message: `Relayed ASL Node ${config.aslNode} transmission from K2NVO -> YSF ${config.ysfReflectorId} & P25 ${config.p25ReflectorId} (28.4s)`,
+    message: `Relayed Remote ASL Node ${config.aslNode} transmission from N0CALL -> YSF ${config.ysfReflectorId} & P25 ${config.p25ReflectorId} (24.2s)`,
   },
 ];
 
@@ -511,6 +517,8 @@ async function startServer() {
       jitterBufferMs: Math.min(160, Math.max(20, Number(incoming.jitterBufferMs ?? config.jitterBufferMs))),
       timeoutTimerSec: Math.min(600, Math.max(30, Number(incoming.timeoutTimerSec ?? config.timeoutTimerSec))),
     };
+
+    persistConfigToDisk(config);
 
     // Keep daemon port metadata synchronized with live config
     daemons = daemons.map((d) => {

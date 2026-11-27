@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Check, Download, Save, RotateCcw } from 'lucide-react';
 import { BridgeConfig, GeneratedFile } from '../shared/bridgeTypes';
 import { DEFAULT_BRIDGE_CONFIG, generateAllBridgeFiles } from '../shared/configGenerator';
@@ -10,15 +10,25 @@ interface ConfigFilesViewProps {
 
 export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSaveConfig }) => {
   const [draft, setDraft] = useState<BridgeConfig>(config);
+  const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<'All' | GeneratedFile['category']>('All');
   const [selectedPath, setSelectedPath] = useState<string>('docker-compose.yml');
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
+  const lastSyncedJsonRef = useRef<string>(JSON.stringify(config));
+
+  // Only sync from server when config values genuinely change AND user has no unsaved edits
   useEffect(() => {
-    setDraft(config);
-  }, [config]);
+    const incomingJson = JSON.stringify(config);
+    if (incomingJson !== lastSyncedJsonRef.current) {
+      lastSyncedJsonRef.current = incomingJson;
+      if (!isDirty) {
+        setDraft(config);
+      }
+    }
+  }, [config, isDirty]);
 
   const files = useMemo(() => generateAllBridgeFiles(draft), [draft]);
 
@@ -31,6 +41,7 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
     visibleFiles.find((f) => f.path === selectedPath) || visibleFiles[0] || files[0];
 
   const updateField = <K extends keyof BridgeConfig>(key: K, value: BridgeConfig[K]) => {
+    setIsDirty(true);
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -40,6 +51,8 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
     setSavedNotice(false);
     try {
       await onSaveConfig(draft);
+      lastSyncedJsonRef.current = JSON.stringify(draft);
+      setIsDirty(false);
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 3000);
     } finally {
@@ -49,6 +62,7 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
 
   const handleReset = () => {
     setDraft({ ...DEFAULT_BRIDGE_CONFIG });
+    setIsDirty(true);
   };
 
   const handleCopy = async (file: GeneratedFile) => {
@@ -93,13 +107,18 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {isDirty && (
+              <span className="text-xs font-medium text-amber-700 mr-1 whitespace-nowrap">
+                Unsaved changes
+              </span>
+            )}
             <button
               type="button"
               onClick={handleReset}
               className="h-8 inline-flex items-center gap-1.5 px-3 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md whitespace-nowrap shrink-0"
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              Reset Node 20800 Defaults
+              Reset Defaults
             </button>
             <button
               type="submit"
@@ -248,10 +267,10 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
             </div>
           </div>
 
-          {/* P25 Reflector 9510 */}
+          {/* P25 Reflector */}
           <div className="space-y-3">
             <div className="text-xs font-semibold text-slate-900 pb-1 border-b border-slate-100">
-              P25 Reflector Docker (TG9510)
+              P25 Reflector Docker (corrosive/docker-p25reflector)
             </div>
             <FieldInput
               label="P25 Reflector / TG ID"

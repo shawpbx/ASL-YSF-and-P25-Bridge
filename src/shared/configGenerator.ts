@@ -1,17 +1,17 @@
 import { BridgeConfig, GeneratedFile } from './bridgeTypes.js';
 
 export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
-  callsign: 'KE6UPI',
-  dmrId: '3100001',
-  location: 'IEARG Bridge Hub',
-  aslNode: '20800',
+  callsign: 'N0CALL',
+  dmrId: '1234567',
+  location: 'My Location',
+  aslNode: '12345',
   aslPrivateYsfNode: '1998',
   aslPrivateP25Node: '1999',
   aslHost: '192.168.1.100',
   dockerHostIp: '192.168.1.200',
-  ysfReflectorId: '95100',
-  ysfReflectorName: 'IEARG',
-  ysfReflectorDescription: 'KE6UPI',
+  ysfReflectorId: '10000',
+  ysfReflectorName: 'MY-YSF',
+  ysfReflectorDescription: 'My YSF Reflector',
   ysfReflectorHost: 'ysfreflector-with-dashboard',
   ysfReflectorPort: 42000,
   ysfDashboardPort: 42080,
@@ -20,8 +20,8 @@ export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
   ysfUsrpRxPort: 34001,
   ysfTlvTxPort: 31103,
   ysfTlvRxPort: 31100,
-  p25ReflectorId: '9510',
-  p25ReflectorHost: 'tg9510',
+  p25ReflectorId: '10100',
+  p25ReflectorHost: 'p25reflector',
   p25ReflectorPort: 41000,
   p25LogPath: '/var/log/P25Reflector',
   p25Nac: '293',
@@ -43,7 +43,7 @@ export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
   jitterBufferMs: 40,
   timeoutTimerSec: 180,
   githubRepo: 'shawpbx/ASL-YSF-and-P25-Bridge',
-  containerName: 'asl20800-crossmode-bridge',
+  containerName: 'asl-crossmode-bridge',
   networkModeHost: false,
   includeReflectorContainers: true,
   includeCasaOsMetadata: true,
@@ -76,10 +76,10 @@ export function generateAllBridgeFiles(cfg: BridgeConfig): GeneratedFile[] {
       : cfg.ysfReflectorHost;
 
   const effectiveP25Host =
-    cfg.includeReflectorContainers && cfg.networkModeHost && cfg.p25ReflectorHost === 'tg9510'
+    cfg.includeReflectorContainers && cfg.networkModeHost && cfg.p25ReflectorHost === 'p25reflector'
       ? '127.0.0.1'
       : cfg.includeReflectorContainers && !cfg.networkModeHost && cfg.p25ReflectorHost === '127.0.0.1'
-      ? 'tg9510'
+      ? 'p25reflector'
       : cfg.p25ReflectorHost;
 
   const ysfGatewayClientPort = cfg.ysfReflectorPort === 42000 ? 42001 : 42000;
@@ -95,15 +95,15 @@ export function generateAllBridgeFiles(cfg: BridgeConfig): GeneratedFile[] {
 
   const dependsOnBlock = cfg.includeReflectorContainers
     ? `    depends_on:
-      - tg9510
+      - p25reflector
       - ysfreflector-with-dashboard
 `
     : '';
 
   const reflectorServicesBlock = cfg.includeReflectorContainers
     ? `
-  tg9510:
-    container_name: TG${cfg.p25ReflectorId}
+  p25reflector:
+    container_name: P25Reflector-${cfg.p25ReflectorId}
     image: corrosive/docker-p25reflector
     networks:
       - default
@@ -716,8 +716,8 @@ Dockhand / CasaOS / Docker Compose stack for bridging a **Remote AllStarLink Ser
 ## Containers Included (No Local AllStarLink Required)
 
 - **\`asl-crossmode-bridge\`** (\`${ghcrImage}\`): Cross-mode audio bridge + Monitoring Dashboard (TCP \`${cfg.dashboardPort}\`, inbound USRP UDP \`${cfg.ysfUsrpRxPort}\` & \`${cfg.p25UsrpRxPort}\`)
-- **\`ysfreflector-with-dashboard\`** (\`ghcr.io/neilbartley/ysfreflector-with-dashboard:latest\`): YSF Reflector \`${cfg.ysfReflectorId}\` (\`IEARG\` / \`KE6UPI\`, UDP \`${cfg.ysfReflectorPort}\`, Web UI TCP \`${cfg.ysfDashboardPort}\`)
-- **\`tg9510\`** (\`corrosive/docker-p25reflector\`): P25 Reflector \`TG${cfg.p25ReflectorId}\` (UDP \`${cfg.p25ReflectorPort}\`, logs at \`${cfg.p25LogPath}\`)
+- **\`ysfreflector-with-dashboard\`** (\`ghcr.io/neilbartley/ysfreflector-with-dashboard:latest\`): YSF Reflector \`${cfg.ysfReflectorId}\` (\`${cfg.ysfReflectorName}\` / \`${cfg.ysfReflectorDescription}\`, UDP \`${cfg.ysfReflectorPort}\`, Web UI TCP \`${cfg.ysfDashboardPort}\`)
+- **\`p25reflector\`** (\`corrosive/docker-p25reflector\`): P25 Reflector \`TG${cfg.p25ReflectorId}\` (UDP \`${cfg.p25ReflectorPort}\`, logs at \`${cfg.p25LogPath}\`)
 
 ## Deploying in Dockhand / CasaOS / Portainer
 
@@ -775,7 +775,7 @@ Dockhand / CasaOS / Docker Compose stack for bridging a **Remote AllStarLink Ser
     },
     {
       path: 'asterisk/rpt.conf.snippet',
-      title: 'Remote ASL rpt.conf',
+      title: `Remote ASL rpt.conf (Node ${cfg.aslNode})`,
       category: 'AllStarLink',
       language: 'ini',
       description: `Stanzas for your Remote AllStarLink Server (${cfg.aslHost}) sending USRP audio to Docker host ${cfg.dockerHostIp}.`,

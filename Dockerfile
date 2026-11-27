@@ -1,4 +1,4 @@
-# Remote AllStarLink Node 20800 <-> YSF 95100 (IEARG) & P25 9510 Cross-Mode Bridge + Dashboard
+# Remote AllStarLink <-> YSF & P25 Cross-Mode Bridge + Dashboard
 FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
@@ -10,8 +10,8 @@ RUN npm run build
 FROM node:22-bookworm-slim
 
 LABEL org.opencontainers.image.source="https://github.com/shawpbx/ASL-YSF-and-P25-Bridge" \
-      org.opencontainers.image.title="ASL 20800 to YSF 95100 and P25 9510 Bridge" \
-      org.opencontainers.image.description="Dockerized cross-mode bridge for Remote AllStarLink Node 20800, YSF 95100 (IEARG), and P25 9510"
+      org.opencontainers.image.title="AllStarLink to YSF and P25 Cross-Mode Bridge" \
+      org.opencontainers.image.description="Dockerized cross-mode bridge for Remote AllStarLink, YSF Reflector, and P25 Reflector"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_ENV=production \
