@@ -1,5 +1,6 @@
 # Repository: https://github.com/shawpbx/ASL-YSF-and-P25-Bridge
-# Unified Stack: AllStarLink 20800 Bridge + YSF Reflector 95100 (IEARG) + P25 Reflector TG9510
+# Dockhand / CasaOS / Portainer ready — pulls prebuilt GHCR image (no local Dockerfile required)
+# Connects over USRP UDP to your Remote AllStarLink Server (Node 20800)
 
 networks:
   default:
@@ -10,26 +11,30 @@ networks:
 services:
   asl-crossmode-bridge:
     image: ghcr.io/shawpbx/asl-ysf-and-p25-bridge:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: asl20800-crossmode-bridge
     restart: unless-stopped
     depends_on:
       - tg9510
       - ysfreflector-with-dashboard
-    network_mode: host
+    networks:
+      - default
+    ports:
+      - "3000:3000/tcp"
+      - "34001:34001/udp"
+      - "34002:34002/udp"
     environment:
       - TZ=UTC
+      - NODE_ENV=production
+      - PORT=3000
+      - REMOTE_ASL_HOST=192.168.1.100
       - ASL_NODE=20800
       - YSF_REFLECTOR=95100
       - YSF_REFLECTOR_NAME=IEARG
       - P25_REFLECTOR=9510
       - BRIDGE_CALLSIGN=KE6UPI
       - BRIDGE_DMR_ID=3100001
-      - PORT=3000
     volumes:
-      - ./config:/opt/bridge/config:ro
+      - bridge_config:/opt/bridge/config
       - bridge_logs:/var/log/dvswitch
       - bridge_data:/var/lib/dvswitch
     logging:
@@ -72,6 +77,7 @@ services:
     volumes: []
 
 volumes:
+  bridge_config:
   bridge_logs:
   bridge_data:
 

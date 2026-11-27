@@ -66,16 +66,16 @@ export const DockerStackView: React.FC<DockerStackViewProps> = ({
 
   const portMatrix = [
     {
-      channel: `ASL ${config.aslNode} (${config.aslPrivateYsfNode}) <-> Analog_Bridge_YSF`,
+      channel: `Remote ASL ${config.aslNode} (${config.aslHost}) <-> Analog_Bridge_YSF`,
       protocol: 'USRP UDP',
-      binding: `${config.aslHost}:${config.ysfUsrpTxPort} / ${config.ysfUsrpRxPort}`,
-      purpose: '8kHz s16le PCM voice stream for YSF leg',
+      binding: `TX ${config.aslHost}:${config.ysfUsrpTxPort} · RX :${config.ysfUsrpRxPort}`,
+      purpose: 'Remote 8kHz s16le PCM voice stream for YSF leg',
     },
     {
-      channel: `ASL ${config.aslNode} (${config.aslPrivateP25Node}) <-> Analog_Bridge_P25`,
+      channel: `Remote ASL ${config.aslNode} (${config.aslHost}) <-> Analog_Bridge_P25`,
       protocol: 'USRP UDP',
-      binding: `${config.aslHost}:${config.p25UsrpTxPort} / ${config.p25UsrpRxPort}`,
-      purpose: '8kHz s16le PCM voice stream for P25 leg',
+      binding: `TX ${config.aslHost}:${config.p25UsrpTxPort} · RX :${config.p25UsrpRxPort}`,
+      purpose: 'Remote 8kHz s16le PCM voice stream for P25 leg',
     },
     {
       channel: 'Analog_Bridge_YSF <-> MMDVM_Bridge',

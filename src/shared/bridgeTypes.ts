@@ -8,11 +8,12 @@ export interface BridgeConfig {
   callsign: string;
   dmrId: string;
   location: string;
-  // AllStarLink Node 20800 + Private USRP bridge nodes
+  // Remote AllStarLink Node 20800 + Private USRP bridge nodes
   aslNode: string;
   aslPrivateYsfNode: string;
   aslPrivateP25Node: string;
   aslHost: string;
+  dockerHostIp: string;
   // YSF Reflector 95100
   ysfReflectorId: string;
   ysfReflectorName: string;

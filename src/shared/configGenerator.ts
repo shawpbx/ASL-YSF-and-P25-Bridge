@@ -7,11 +7,12 @@ export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
   aslNode: '20800',
   aslPrivateYsfNode: '1998',
   aslPrivateP25Node: '1999',
-  aslHost: '127.0.0.1',
+  aslHost: '192.168.1.100',
+  dockerHostIp: '192.168.1.200',
   ysfReflectorId: '95100',
   ysfReflectorName: 'IEARG',
   ysfReflectorDescription: 'KE6UPI',
-  ysfReflectorHost: '127.0.0.1',
+  ysfReflectorHost: 'ysfreflector-with-dashboard',
   ysfReflectorPort: 42000,
   ysfDashboardPort: 42080,
   ysfMode: 'YSFN',
@@ -20,7 +21,7 @@ export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
   ysfTlvTxPort: 31103,
   ysfTlvRxPort: 31100,
   p25ReflectorId: '9510',
-  p25ReflectorHost: '127.0.0.1',
+  p25ReflectorHost: 'tg9510',
   p25ReflectorPort: 41000,
   p25LogPath: '/var/log/P25Reflector',
   p25Nac: '293',
@@ -43,7 +44,7 @@ export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
   timeoutTimerSec: 180,
   githubRepo: 'shawpbx/ASL-YSF-and-P25-Bridge',
   containerName: 'asl20800-crossmode-bridge',
-  networkModeHost: true,
+  networkModeHost: false,
   includeReflectorContainers: true,
   includeCasaOsMetadata: true,
   dashboardPort: 3000,
@@ -66,20 +67,21 @@ export function generateAllBridgeFiles(cfg: BridgeConfig): GeneratedFile[] {
     .replace(/\.git$/, '');
   const ghcrImage = `ghcr.io/${repoSlug.toLowerCase()}:latest`;
 
-  // When running with local bundled reflector containers:
-  // - In host networking mode, bridge talks to published localhost ports (127.0.0.1:42000 & 127.0.0.1:41000)
-  // - In bridged Docker network mode, bridge talks over Docker DNS (ysfreflector-with-dashboard & tg9510)
+  // Resolve reflector addresses cleanly for both Docker bridge network (Dockhand/CasaOS) and host networking
   const effectiveYsfHost =
-    cfg.includeReflectorContainers && !cfg.networkModeHost && cfg.ysfReflectorHost === '127.0.0.1'
+    cfg.includeReflectorContainers && cfg.networkModeHost && cfg.ysfReflectorHost === 'ysfreflector-with-dashboard'
+      ? '127.0.0.1'
+      : cfg.includeReflectorContainers && !cfg.networkModeHost && cfg.ysfReflectorHost === '127.0.0.1'
       ? 'ysfreflector-with-dashboard'
       : cfg.ysfReflectorHost;
 
   const effectiveP25Host =
-    cfg.includeReflectorContainers && !cfg.networkModeHost && cfg.p25ReflectorHost === '127.0.0.1'
+    cfg.includeReflectorContainers && cfg.networkModeHost && cfg.p25ReflectorHost === 'tg9510'
+      ? '127.0.0.1'
+      : cfg.includeReflectorContainers && !cfg.networkModeHost && cfg.p25ReflectorHost === '127.0.0.1'
       ? 'tg9510'
       : cfg.p25ReflectorHost;
 
-  // Avoid UDP 42000 port collision on host between YSFGateway client socket and ysfreflector-with-dashboard
   const ysfGatewayClientPort = cfg.ysfReflectorPort === 42000 ? 42001 : 42000;
 
   const networkBlock = cfg.networkModeHost
@@ -88,9 +90,7 @@ export function generateAllBridgeFiles(cfg: BridgeConfig): GeneratedFile[] {
       - default
     ports:
       - "${cfg.dashboardPort}:${cfg.dashboardPort}/tcp"
-      - "${cfg.ysfUsrpTxPort}:${cfg.ysfUsrpTxPort}/udp"
       - "${cfg.ysfUsrpRxPort}:${cfg.ysfUsrpRxPort}/udp"
-      - "${cfg.p25UsrpTxPort}:${cfg.p25UsrpTxPort}/udp"
       - "${cfg.p25UsrpRxPort}:${cfg.p25UsrpRxPort}/udp"`;
 
   const dependsOnBlock = cfg.includeReflectorContainers
@@ -149,69 +149,57 @@ x-casaos:
 `
     : '';
 
-  const dockerfile = `# AllStarLink Node ${cfg.aslNode} <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) & P25 ${cfg.p25ReflectorId} Cross-Mode Bridge
-FROM debian:bookworm-slim
+  const dockerfile = `# AllStarLink Remote Node ${cfg.aslNode} <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) & P25 ${cfg.p25ReflectorId} Bridge
+FROM node:22-bookworm-slim AS builder
+
+WORKDIR /app
+COPY package.json ./
+RUN npm install --legacy-peer-deps
+COPY . .
+RUN npm run build
+
+FROM node:22-bookworm-slim
 
 LABEL org.opencontainers.image.source="https://github.com/${repoSlug}" \\
       org.opencontainers.image.title="ASL ${cfg.aslNode} to YSF ${cfg.ysfReflectorId} and P25 ${cfg.p25ReflectorId} Bridge" \\
-      org.opencontainers.image.description="Dockerized AllStarLink Node ${cfg.aslNode} cross-mode bridge for YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) and P25 ${cfg.p25ReflectorId}"
+      org.opencontainers.image.description="Dockerized cross-mode bridge for Remote AllStarLink Node ${cfg.aslNode}, YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}), and P25 ${cfg.p25ReflectorId}"
 
 ENV DEBIAN_FRONTEND=noninteractive \\
+    NODE_ENV=production \\
+    PORT=${cfg.dashboardPort} \\
     TZ=${cfg.timezone}
 
-# Install system prerequisites, supervisor, and Node.js 20 for the monitoring dashboard
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     ca-certificates \\
     curl \\
-    gnupg \\
     supervisor \\
     procps \\
     iproute2 \\
-    netcat-openbsd \\
     tzdata \\
-    qemu-user-static \\
-    && mkdir -p /etc/apt/keyrings \\
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \\
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \\
-    && apt-get update && apt-get install -y --no-install-recommends nodejs \\
     && rm -rf /var/lib/apt/lists/*
 
-# Install DVSwitch repository & cross-mode bridge binaries
-RUN curl -fsSL http://dvswitch.org/bookworm -o /tmp/bookworm \\
-    && chmod +x /tmp/bookworm \\
-    && /tmp/bookworm \\
-    && apt-get update \\
-    && apt-get install -y --no-install-recommends \\
-       analog-bridge \\
-       mmdvm-bridge \\
-       md380-emu \\
-       ysfgateway \\
-       p25gateway \\
-       dvswitch \\
-    && rm -rf /var/lib/apt/lists/* /tmp/bookworm
+WORKDIR /opt/bridge/dashboard
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.ts ./
+COPY --from=builder /app/src/shared ./src/shared
+COPY --from=builder /app/docker ./docker
 
-# Create runtime directories for separate YSF and P25 Analog_Bridge instances and logs
-RUN mkdir -p /opt/bridge/config /opt/bridge/dashboard /var/log/dvswitch /var/log/supervisor /var/lib/dvswitch
-
-# Copy bridge configurations, supervisor manifest, and entrypoint
-COPY config/ /opt/bridge/config/
-COPY supervisord.conf /etc/supervisor/conf.d/bridge.conf
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Healthcheck verifies DVSwitch gateways and monitoring dashboard are responsive
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \\
-  CMD supervisorctl status | grep -q "RUNNING" && curl -fsS http://127.0.0.1:${cfg.dashboardPort}/api/health || exit 1
+RUN mkdir -p /opt/bridge/config /var/log/dvswitch /var/lib/dvswitch /var/log/supervisor
 
 EXPOSE ${cfg.dashboardPort}/tcp
-EXPOSE ${cfg.ysfUsrpTxPort}/udp ${cfg.ysfUsrpRxPort}/udp
-EXPOSE ${cfg.p25UsrpTxPort}/udp ${cfg.p25UsrpRxPort}/udp
+EXPOSE ${cfg.ysfUsrpRxPort}/udp ${cfg.p25UsrpRxPort}/udp
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+  CMD curl -fsS http://127.0.0.1:${cfg.dashboardPort}/api/health || exit 1
+
+CMD ["./node_modules/.bin/tsx", "server.ts"]
 `;
 
   const dockerCompose = `# Repository: https://github.com/${repoSlug}
-# Unified Stack: AllStarLink ${cfg.aslNode} Bridge + YSF Reflector ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) + P25 Reflector ${cfg.p25ReflectorId}
+# Dockhand / CasaOS / Portainer ready — pulls prebuilt GHCR image (no local Dockerfile required)
+# Connects over USRP UDP to Remote AllStarLink Node ${cfg.aslNode} at ${cfg.aslHost}
 
 networks:
   default:
@@ -222,23 +210,22 @@ networks:
 services:
   asl-crossmode-bridge:
     image: ${ghcrImage}
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: ${cfg.containerName}
     restart: unless-stopped
 ${dependsOnBlock}${networkBlock}
 ${ambeUsbBlock}    environment:
       - TZ=${cfg.timezone}
+      - NODE_ENV=production
+      - PORT=${cfg.dashboardPort}
+      - REMOTE_ASL_HOST=${cfg.aslHost}
       - ASL_NODE=${cfg.aslNode}
       - YSF_REFLECTOR=${cfg.ysfReflectorId}
       - YSF_REFLECTOR_NAME=${cfg.ysfReflectorName}
       - P25_REFLECTOR=${cfg.p25ReflectorId}
       - BRIDGE_CALLSIGN=${cfg.callsign}
       - BRIDGE_DMR_ID=${cfg.dmrId}
-      - PORT=${cfg.dashboardPort}
     volumes:
-      - ./config:/opt/bridge/config:ro
+      - bridge_config:/opt/bridge/config
       - bridge_logs:/var/log/dvswitch
       - bridge_data:/var/lib/dvswitch
     logging:
@@ -248,6 +235,7 @@ ${ambeUsbBlock}    environment:
         max-file: "3"
 ${reflectorServicesBlock}
 volumes:
+  bridge_config:
   bridge_logs:
   bridge_data:
 ${casaOsBlock}`;
@@ -367,7 +355,7 @@ stdout_logfile=/var/log/dvswitch/analog_bridge_p25.log
 stderr_logfile=/var/log/dvswitch/analog_bridge_p25.err.log
 
 [program:bridge_dashboard]
-command=/usr/bin/node /opt/bridge/dashboard/server.ts
+command=/opt/bridge/dashboard/node_modules/.bin/tsx /opt/bridge/dashboard/server.ts
 directory=/opt/bridge/dashboard
 environment=PORT="${cfg.dashboardPort}",NODE_ENV="production"
 autostart=true
@@ -378,14 +366,16 @@ stderr_logfile=/var/log/dvswitch/dashboard.err.log
 `;
 
   const rptConfSnippet = `; ============================================================================
-; AllStarLink /etc/asterisk/rpt.conf — Node ${cfg.aslNode} Cross-Mode Bridge Stanzas
-; Star topology prevents audio feedback loops while transcoding full 3-way:
-;   ASL Node ${cfg.aslNode} <-> Private USRP ${cfg.aslPrivateYsfNode} (YSF ${cfg.ysfReflectorId} / ${cfg.ysfReflectorName})
-;   ASL Node ${cfg.aslNode} <-> Private USRP ${cfg.aslPrivateP25Node} (P25 TG${cfg.p25ReflectorId})
+; REMOTE AllStarLink Server (${cfg.aslHost}) — /etc/asterisk/rpt.conf Stanzas
+; AllStarLink runs on your remote server (Node ${cfg.aslNode}) and sends USRP UDP
+; packets across the network to this Docker host (${cfg.dockerHostIp}):
+;   Remote ASL ${cfg.aslNode} -> Private ${cfg.aslPrivateYsfNode} -> USRP ${cfg.dockerHostIp}:${cfg.ysfUsrpRxPort} (YSF ${cfg.ysfReflectorId})
+;   Remote ASL ${cfg.aslNode} -> Private ${cfg.aslPrivateP25Node} -> USRP ${cfg.dockerHostIp}:${cfg.p25UsrpRxPort} (P25 TG${cfg.p25ReflectorId})
+; Ensure firewall allows UDP ${cfg.ysfUsrpTxPort}/${cfg.p25UsrpTxPort} on ${cfg.aslHost} and UDP ${cfg.ysfUsrpRxPort}/${cfg.p25UsrpRxPort} on ${cfg.dockerHostIp}.
 ; ============================================================================
 
 [${cfg.aslNode}](node-main)
-; Main public AllStarLink hub node — permanently links both digital bridge legs on boot
+; Main public AllStarLink hub node — links both remote USRP digital bridge legs on boot
 startup_macro = *73${cfg.aslPrivateYsfNode}*73${cfg.aslPrivateP25Node}
 duplex = 0
 hangtime = 0
@@ -396,9 +386,9 @@ nounkeyct = 1
 holdofftelem = 1
 telemdefault = 0
 
-; Private Bridge Leg A: USRP -> Analog_Bridge_YSF -> YSF Reflector ${cfg.ysfReflectorId} (${cfg.ysfReflectorName})
+; Private Bridge Leg A: Remote ASL -> Docker Host ${cfg.dockerHostIp}:${cfg.ysfUsrpRxPort} (YSF ${cfg.ysfReflectorId} / ${cfg.ysfReflectorName})
 [${cfg.aslPrivateYsfNode}](node-main)
-rxchannel = USRP/${cfg.aslHost}:${cfg.ysfUsrpRxPort}:${cfg.ysfUsrpTxPort}
+rxchannel = USRP/${cfg.dockerHostIp}:${cfg.ysfUsrpRxPort}:${cfg.ysfUsrpTxPort}
 duplex = 0
 hangtime = 0
 althangtime = 0
@@ -408,9 +398,9 @@ telemdefault = 0
 nounkeyct = 1
 statpost_program = /usr/bin/wget,-q,--timeout=15,--tries=1,--output-document=/dev/null
 
-; Private Bridge Leg B: USRP -> Analog_Bridge_P25 -> P25 Reflector ${cfg.p25ReflectorId}
+; Private Bridge Leg B: Remote ASL -> Docker Host ${cfg.dockerHostIp}:${cfg.p25UsrpRxPort} (P25 TG${cfg.p25ReflectorId})
 [${cfg.aslPrivateP25Node}](node-main)
-rxchannel = USRP/${cfg.aslHost}:${cfg.p25UsrpRxPort}:${cfg.p25UsrpTxPort}
+rxchannel = USRP/${cfg.dockerHostIp}:${cfg.p25UsrpRxPort}:${cfg.p25UsrpTxPort}
 duplex = 0
 hangtime = 0
 althangtime = 0
@@ -420,12 +410,12 @@ telemdefault = 0
 nounkeyct = 1
 
 [nodes]
-; Add local routing entries inside [nodes] in /etc/asterisk/rpt.conf
+; Add local routing entries inside [nodes] on your Remote AllStarLink server
 ${cfg.aslPrivateYsfNode} = radio@127.0.0.1/${cfg.aslPrivateYsfNode},NONE
 ${cfg.aslPrivateP25Node} = radio@127.0.0.1/${cfg.aslPrivateP25Node},NONE
 `;
 
-  const analogBridgeYsf = `; Analog_Bridge_YSF.ini — AllStarLink Node ${cfg.aslNode} (via ${cfg.aslPrivateYsfNode}) <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName})
+  const analogBridgeYsf = `; Analog_Bridge_YSF.ini — Remote AllStarLink Node ${cfg.aslNode} (${cfg.aslHost}) <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName})
 ; Transcodes 8kHz s16le PCM (USRP) <-> AMBE+2 (${cfg.ysfMode})
 
 [GENERAL]
@@ -448,6 +438,7 @@ txTs = 2
 colorCode = 1
 
 [USRP]
+; Remote AllStarLink server IP receiving outbound USRP audio on port ${cfg.ysfUsrpTxPort}
 address = ${cfg.aslHost}
 txPort = ${cfg.ysfUsrpTxPort}
 rxPort = ${cfg.ysfUsrpRxPort}
@@ -469,7 +460,7 @@ useEmulator = ${useEmulator}
 emulatorAddress = 127.0.0.1:${cfg.md380EmuPort}
 `;
 
-  const analogBridgeP25 = `; Analog_Bridge_P25.ini — AllStarLink Node ${cfg.aslNode} (via ${cfg.aslPrivateP25Node}) <-> P25 Reflector ${cfg.p25ReflectorId}
+  const analogBridgeP25 = `; Analog_Bridge_P25.ini — Remote AllStarLink Node ${cfg.aslNode} (${cfg.aslHost}) <-> P25 Reflector ${cfg.p25ReflectorId}
 ; Transcodes 8kHz s16le PCM (USRP) <-> IMBE 7200 bps (P25 Phase 1)
 
 [GENERAL]
@@ -492,6 +483,7 @@ txTs = 2
 colorCode = 1
 
 [USRP]
+; Remote AllStarLink server IP receiving outbound USRP audio on port ${cfg.p25UsrpTxPort}
 address = ${cfg.aslHost}
 txPort = ${cfg.p25UsrpTxPort}
 rxPort = ${cfg.p25UsrpRxPort}
@@ -525,7 +517,7 @@ Latitude=0.0
 Longitude=0.0
 Height=0
 Location=${cfg.location}
-Description=ASL ${cfg.aslNode} <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) / P25 ${cfg.p25ReflectorId}
+Description=Remote ASL ${cfg.aslNode} <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) / P25 ${cfg.p25ReflectorId}
 URL=https://github.com/${repoSlug}
 
 [Log]
@@ -637,7 +629,7 @@ Debug=0
 
 [YSF Network]
 Enable=1
-; Local gateway socket uses UDP ${ysfGatewayClientPort} to avoid binding collision with local ysfreflector-with-dashboard on UDP ${cfg.ysfReflectorPort}
+; Local gateway socket uses UDP ${ysfGatewayClientPort} to avoid collision with ysfreflector-with-dashboard on UDP ${cfg.ysfReflectorPort}
 Port=${ysfGatewayClientPort}
 Hosts=/opt/bridge/config/YSFHosts.txt
 ReloadTime=60
@@ -696,16 +688,14 @@ ${cfg.p25ReflectorId}\t${effectiveP25Host}\t${cfg.p25ReflectorPort}
   const entrypointSh = `#!/usr/bin/env bash
 set -euo pipefail
 
-echo "[entrypoint] Starting AllStarLink Node ${cfg.aslNode} Cross-Mode Bridge (YSF ${cfg.ysfReflectorId}/${cfg.ysfReflectorName} + P25 ${cfg.p25ReflectorId})"
+echo "[entrypoint] Starting Bridge for Remote AllStarLink Node ${cfg.aslNode} (${cfg.aslHost}) <-> YSF ${cfg.ysfReflectorId}/${cfg.ysfReflectorName} + P25 ${cfg.p25ReflectorId}"
 
 mkdir -p /var/log/dvswitch /var/lib/dvswitch /var/log/supervisor
 
-# Ensure subscriber ID databases exist to avoid startup warnings
 touch /var/lib/dvswitch/subscriber_ids.csv
 touch /var/lib/dvswitch/DMRIds.dat
 touch /var/lib/dvswitch/P25HostsLocal.txt
 
-# Verify vocoder configuration
 if [ "${cfg.vocoderEngine}" = "ambe-usb" ]; then
   if [ -e "${cfg.ambeUsbDevice}" ]; then
     echo "[entrypoint] Hardware AMBE-3000 device detected at ${cfg.ambeUsbDevice}"
@@ -719,51 +709,36 @@ fi
 exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 `;
 
-  const readme = `# AllStarLink Node ${cfg.aslNode} <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) & P25 ${cfg.p25ReflectorId} Docker Stack
+  const readme = `# Remote AllStarLink Node ${cfg.aslNode} <-> YSF ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}) & P25 ${cfg.p25ReflectorId} Docker Stack
 
-Production Docker Compose stack combining:
-- **\`asl-crossmode-bridge\`** (\`${ghcrImage}\`): DVSwitch dual-mode audio transcoder (PCM 8kHz <-> AMBE+2 <-> IMBE 7200 bps) + Monitoring Dashboard on port \`${cfg.dashboardPort}\`
-- **\`ysfreflector-with-dashboard\`** (\`ghcr.io/neilbartley/ysfreflector-with-dashboard:latest\`): YSF Reflector \`${cfg.ysfReflectorId}\` (\`REFLECTOR_NAME=${cfg.ysfReflectorName}\`, \`REFLECTOR_DESCRIPTION=${cfg.ysfReflectorDescription}\`) on UDP \`${cfg.ysfReflectorPort}\` + Web Dashboard on TCP \`${cfg.ysfDashboardPort}\`
-- **\`tg9510\`** (\`corrosive/docker-p25reflector\`): P25 Reflector \`TG${cfg.p25ReflectorId}\` on UDP \`${cfg.p25ReflectorPort}\` with logs persisted to \`${cfg.p25LogPath}\`
+Dockhand / CasaOS / Docker Compose stack for bridging a **Remote AllStarLink Server** (Node \`${cfg.aslNode}\` at \`${cfg.aslHost}\`) to local Dockerized **YSF Reflector ${cfg.ysfReflectorId}** and **P25 Reflector TG${cfg.p25ReflectorId}**.
 
-## Signal & Audio Architecture
+## Containers Included (No Local AllStarLink Required)
 
-- **Central Audio Mixer**: AllStarLink Node \`${cfg.aslNode}\` (\`app_rpt\`) permanently links private \`chan_usrp\` nodes \`${cfg.aslPrivateYsfNode}\` (YSF leg) and \`${cfg.aslPrivateP25Node}\` (P25 leg) via \`startup_macro = *73${cfg.aslPrivateYsfNode}*73${cfg.aslPrivateP25Node}\`.
-- **YSF Leg (${cfg.ysfReflectorId} / ${cfg.ysfReflectorName})**: \`chan_usrp\` (UDP \`${cfg.ysfUsrpTxPort}/${cfg.ysfUsrpRxPort}\`) <-> \`Analog_Bridge_YSF\` (${cfg.ysfMode} AMBE+2 via \`${cfg.vocoderEngine}\`) <-> TLV (\`${cfg.ysfTlvTxPort}/${cfg.ysfTlvRxPort}\`) <-> \`MMDVM_Bridge\` <-> \`YSFGateway\` (client UDP \`${ysfGatewayClientPort}\`) <-> \`ysfreflector-with-dashboard\` (\`${effectiveYsfHost}:${cfg.ysfReflectorPort}\`).
-- **P25 Leg (TG${cfg.p25ReflectorId})**: \`chan_usrp\` (UDP \`${cfg.p25UsrpTxPort}/${cfg.p25UsrpRxPort}\`) <-> \`Analog_Bridge_P25\` (IMBE 7200bps) <-> TLV (\`${cfg.p25TlvTxPort}/${cfg.p25TlvRxPort}\`) <-> \`MMDVM_Bridge\` (NAC \`${cfg.p25Nac}\`) <-> \`P25Gateway\` <-> \`tg9510\` (\`${effectiveP25Host}:${cfg.p25ReflectorPort}\`).
+- **\`asl-crossmode-bridge\`** (\`${ghcrImage}\`): Cross-mode audio bridge + Monitoring Dashboard (TCP \`${cfg.dashboardPort}\`, inbound USRP UDP \`${cfg.ysfUsrpRxPort}\` & \`${cfg.p25UsrpRxPort}\`)
+- **\`ysfreflector-with-dashboard\`** (\`ghcr.io/neilbartley/ysfreflector-with-dashboard:latest\`): YSF Reflector \`${cfg.ysfReflectorId}\` (\`IEARG\` / \`KE6UPI\`, UDP \`${cfg.ysfReflectorPort}\`, Web UI TCP \`${cfg.ysfDashboardPort}\`)
+- **\`tg9510\`** (\`corrosive/docker-p25reflector\`): P25 Reflector \`TG${cfg.p25ReflectorId}\` (UDP \`${cfg.p25ReflectorPort}\`, logs at \`${cfg.p25LogPath}\`)
 
-## Deployment Steps
+## Deploying in Dockhand / CasaOS / Portainer
 
-1. Clone the repository on your AllStarLink Node ${cfg.aslNode} host:
-   \`\`\`bash
-   git clone https://github.com/${repoSlug}.git
-   cd ${repoSlug.split('/').pop() || 'ASL-YSF-and-P25-Bridge'}
-   \`\`\`
-2. Merge \`asterisk/rpt.conf.snippet\` into \`/etc/asterisk/rpt.conf\` on your AllStarLink Node ${cfg.aslNode} host and run:
+1. Ensure GitHub Actions in \`github.com/${repoSlug}\` has built and published \`${ghcrImage}\` (and set the GHCR package visibility to Public, or log in to GHCR in Dockhand).
+2. Paste \`docker-compose.yml\` directly into **Dockhand** and deploy — no local \`Dockerfile\` or \`./config\` directory is needed.
+3. On your **Remote AllStarLink Server** (\`${cfg.aslHost}\`), merge \`asterisk/rpt.conf.snippet\` into \`/etc/asterisk/rpt.conf\` pointing USRP to this Docker host (\`${cfg.dockerHostIp}\`) and run:
    \`\`\`bash
    sudo asterisk -rx "rpt reload"
    \`\`\`
-3. Start all 3 containers (Bridge + YSF Reflector + P25 Reflector):
-   \`\`\`bash
-   docker compose up -d --build
-   \`\`\`
-4. Verify containers and internal DVSwitch processes:
-   \`\`\`bash
-   docker compose ps
-   docker exec ${cfg.containerName} supervisorctl status
-   \`\`\`
-5. Dashboards:
-   - Bridge Monitoring Dashboard: \`http://<host-ip>:${cfg.dashboardPort}\`
-   - YSF Reflector (${cfg.ysfReflectorName}) Dashboard: \`http://<host-ip>:${cfg.ysfDashboardPort}\`
+4. Dashboards:
+   - Bridge Monitoring Dashboard: \`http://${cfg.dockerHostIp}:${cfg.dashboardPort}\`
+   - YSF Reflector (${cfg.ysfReflectorName}) Dashboard: \`http://${cfg.dockerHostIp}:${cfg.ysfDashboardPort}\`
 `;
 
   return [
     {
       path: 'docker-compose.yml',
-      title: 'docker-compose.yml',
+      title: 'docker-compose.yml (Dockhand Ready)',
       category: 'Docker',
       language: 'yaml',
-      description: `Unified 3-container Compose stack (ASL Bridge + ysfreflector-with-dashboard ${cfg.ysfReflectorName} + TG${cfg.p25ReflectorId} P25Reflector) with CasaOS metadata.`,
+      description: `Pull-only 3-container Compose stack (${ghcrImage} + ysfreflector-with-dashboard + TG${cfg.p25ReflectorId}) ready to paste into Dockhand/CasaOS without a local Dockerfile.`,
       content: dockerCompose,
     },
     {
@@ -779,7 +754,7 @@ Production Docker Compose stack combining:
       title: 'Dockerfile',
       category: 'Docker',
       language: 'dockerfile',
-      description: 'Debian Bookworm container bundling DVSwitch, md380-emu, YSFGateway, P25Gateway, supervisor, and dashboard.',
+      description: 'Multi-stage Node 22 Bookworm image using npm install --legacy-peer-deps to prevent esbuild/vite peer conflicts in GitHub Actions.',
       content: dockerfile,
     },
     {
@@ -800,10 +775,10 @@ Production Docker Compose stack combining:
     },
     {
       path: 'asterisk/rpt.conf.snippet',
-      title: 'rpt.conf (Node 20800)',
+      title: 'Remote ASL rpt.conf',
       category: 'AllStarLink',
       language: 'ini',
-      description: `AllStarLink Node ${cfg.aslNode} star-hub stanzas linking private USRP bridge nodes ${cfg.aslPrivateYsfNode} (YSF) and ${cfg.aslPrivateP25Node} (P25).`,
+      description: `Stanzas for your Remote AllStarLink Server (${cfg.aslHost}) sending USRP audio to Docker host ${cfg.dockerHostIp}.`,
       content: rptConfSnippet,
     },
     {
@@ -811,7 +786,7 @@ Production Docker Compose stack combining:
       title: 'Analog_Bridge_YSF.ini',
       category: 'DVSwitch',
       language: 'ini',
-      description: `PCM <-> AMBE+2 (${cfg.ysfMode}) audio transcoder for YSF Reflector ${cfg.ysfReflectorId} (${cfg.ysfReflectorName}).`,
+      description: `PCM <-> AMBE+2 (${cfg.ysfMode}) audio transcoder targeting remote ASL ${cfg.aslHost}:${cfg.ysfUsrpTxPort}.`,
       content: analogBridgeYsf,
     },
     {
@@ -819,7 +794,7 @@ Production Docker Compose stack combining:
       title: 'Analog_Bridge_P25.ini',
       category: 'DVSwitch',
       language: 'ini',
-      description: `PCM <-> IMBE 7200 bps audio transcoder for P25 Reflector TG${cfg.p25ReflectorId}.`,
+      description: `PCM <-> IMBE 7200 bps audio transcoder targeting remote ASL ${cfg.aslHost}:${cfg.p25UsrpTxPort}.`,
       content: analogBridgeP25,
     },
     {
@@ -875,7 +850,7 @@ Production Docker Compose stack combining:
       title: 'README.md',
       category: 'Docker',
       language: 'markdown',
-      description: 'Deployment instructions for the unified 3-container stack and AllStarLink Node 20800 host.',
+      description: 'Dockhand/CasaOS deployment guide and Remote AllStarLink USRP configuration instructions.',
       content: readme,
     },
   ];

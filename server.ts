@@ -21,26 +21,21 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-// Runtime state of the Dockerized cross-mode bridge controller
-let config: BridgeConfig = { ...DEFAULT_BRIDGE_CONFIG };
+// Runtime state of the Dockerized cross-mode bridge controller (Remote AllStarLink via USRP)
+let config: BridgeConfig = {
+  ...DEFAULT_BRIDGE_CONFIG,
+  aslHost: process.env.REMOTE_ASL_HOST || DEFAULT_BRIDGE_CONFIG.aslHost,
+  aslNode: process.env.ASL_NODE || DEFAULT_BRIDGE_CONFIG.aslNode,
+  ysfReflectorId: process.env.YSF_REFLECTOR || DEFAULT_BRIDGE_CONFIG.ysfReflectorId,
+  ysfReflectorName: process.env.YSF_REFLECTOR_NAME || DEFAULT_BRIDGE_CONFIG.ysfReflectorName,
+  p25ReflectorId: process.env.P25_REFLECTOR || DEFAULT_BRIDGE_CONFIG.p25ReflectorId,
+  callsign: process.env.BRIDGE_CALLSIGN || DEFAULT_BRIDGE_CONFIG.callsign,
+  dmrId: process.env.BRIDGE_DMR_ID || DEFAULT_BRIDGE_CONFIG.dmrId,
+};
 const bootTimeMs = Date.now() - 1000 * (3 * 86400 + 14 * 3600 + 22 * 60 + 18); // 3d 14h 22m
 let totalRelays24h = 148;
 
 let daemons: DaemonProcess[] = [
-  {
-    id: 'asterisk-usrp',
-    name: 'Asterisk app_rpt (USRP)',
-    binary: '/usr/sbin/asterisk',
-    role: 'AllStarLink Node 20800 PCM mixer & USRP channels 1998/1999',
-    leg: 'ASL',
-    status: 'running',
-    pid: 1042,
-    uptimeSec: 310938,
-    cpuPercent: 1.4,
-    memMb: 46.2,
-    ports: 'UDP 32001/34001, 32002/34002',
-    configFile: 'asterisk/rpt.conf.snippet',
-  },
   {
     id: 'md380-emu',
     name: 'md380-emu Vocoder',
@@ -313,7 +308,7 @@ function isDaemonRunning(id: string): boolean {
 
 function getActiveLegHealth(): { asl: boolean; ysf: boolean; p25: boolean } {
   const coreOk = isDaemonRunning('mmdvm_bridge');
-  const aslOk = isDaemonRunning('asterisk-usrp');
+  const aslOk = Boolean(config.aslHost.trim()) && (isDaemonRunning('analog_bridge_ysf') || isDaemonRunning('analog_bridge_p25'));
   const vocoderOk = config.vocoderEngine === 'ambe-usb' || isDaemonRunning('md380-emu');
   const ysfContainerOk = !config.includeReflectorContainers || isDaemonRunning('ysfreflector-with-dashboard');
   const p25ContainerOk = !config.includeReflectorContainers || isDaemonRunning('tg9510');
@@ -712,7 +707,7 @@ async function startServer() {
     };
 
     appendLog(
-      mode === 'ASL' ? 'asterisk-usrp' : mode === 'YSF' ? 'ysfgateway' : 'p25gateway',
+      mode === 'ASL' ? 'remote-asl-usrp' : mode === 'YSF' ? 'ysfgateway' : 'p25gateway',
       'INFO',
       `Key-up detected from ${cleanCall} on ${sourceId} -> transcoding ${codecIn} to ${codecOut.join(' & ') || 'no active targets'}`,
     );

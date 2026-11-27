@@ -35,7 +35,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const [modeFilter, setModeFilter] = useState<'ALL' | NetworkMode>('ALL');
 
   const isRunning = (id: string) => daemons.find((d) => d.id === id)?.status === 'running';
-  const aslReady = isRunning('asterisk-usrp');
+  const aslReady = Boolean(config.aslHost.trim()) && (isRunning('analog_bridge_ysf') || isRunning('analog_bridge_p25'));
   const mmdvmReady = isRunning('mmdvm_bridge');
   const vocoderReady = config.vocoderEngine === 'ambe-usb' || isRunning('md380-emu');
   const ysfContainerOk = !config.includeReflectorContainers || isRunning('ysfreflector-with-dashboard');
@@ -275,7 +275,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               markerEnd={p25PathActive ? 'url(#arrow-active)' : p25Ready ? 'url(#arrow-ready)' : 'url(#arrow-idle)'}
             />
 
-            {/* NODE 1: AllStarLink Node 20800 (Left) */}
+            {/* NODE 1: Remote AllStarLink Node 20800 (Left) */}
             <g transform="translate(16, 86)">
               <rect
                 width="216"
@@ -286,16 +286,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 strokeWidth={aslPathActive ? 2 : 1.2}
               />
               <text x="14" y="24" fontSize="11" fontWeight="600" fill="#475569" fontFamily="DM Sans, sans-serif">
-                AllStarLink Hub (app_rpt)
+                Remote AllStarLink Server
               </text>
               <text x="14" y="48" fontSize="18" fontWeight="700" fill="#0F172A" fontFamily="JetBrains Mono, monospace">
                 Node {config.aslNode}
               </text>
               <text x="14" y="68" fontSize="11" fill="#475569" fontFamily="JetBrains Mono, monospace">
-                PCM 8kHz s16le Mixer
+                Host: {config.aslHost}
               </text>
               <text x="14" y="88" fontSize="11" fill="#64748B" fontFamily="JetBrains Mono, monospace">
-                Links: {config.aslPrivateYsfNode} (YSF) · {config.aslPrivateP25Node} (P25)
+                USRP: {config.aslPrivateYsfNode} (YSF) · {config.aslPrivateP25Node} (P25)
               </text>
               <text
                 x="14"
@@ -310,8 +310,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                     ? 'TX Source · Active'
                     : 'RX Relay · Active'
                   : aslReady
-                  ? 'Linked · Nominal'
-                  : 'Offline · Stopped'}
+                  ? 'Remote USRP · Ready'
+                  : 'Offline · Check Bridges'}
               </text>
             </g>
 

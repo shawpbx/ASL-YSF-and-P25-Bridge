@@ -167,31 +167,38 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
             </label>
           </div>
 
-          {/* AllStarLink Node 20800 */}
+          {/* Remote AllStarLink Server */}
           <div className="space-y-3">
             <div className="text-xs font-semibold text-slate-900 pb-1 border-b border-slate-100">
-              AllStarLink Hub (app_rpt)
+              Remote AllStarLink Server (USRP)
             </div>
             <FieldInput
-              label="Public AllStarLink Node"
+              label="Remote ASL Node"
               value={draft.aslNode}
               onChange={(v) => updateField('aslNode', v)}
             />
             <FieldInput
-              label="Private USRP Node (YSF Leg)"
-              value={draft.aslPrivateYsfNode}
-              onChange={(v) => updateField('aslPrivateYsfNode', v)}
-            />
-            <FieldInput
-              label="Private USRP Node (P25 Leg)"
-              value={draft.aslPrivateP25Node}
-              onChange={(v) => updateField('aslPrivateP25Node', v)}
-            />
-            <FieldInput
-              label="Asterisk USRP Host IP"
+              label="Remote ASL Server IP / Host"
               value={draft.aslHost}
               onChange={(v) => updateField('aslHost', v)}
             />
+            <FieldInput
+              label="This Docker Host IP (for remote rpt.conf)"
+              value={draft.dockerHostIp}
+              onChange={(v) => updateField('dockerHostIp', v)}
+            />
+            <div className="grid grid-cols-2 gap-2.5">
+              <FieldInput
+                label="Private YSF Node"
+                value={draft.aslPrivateYsfNode}
+                onChange={(v) => updateField('aslPrivateYsfNode', v)}
+              />
+              <FieldInput
+                label="Private P25 Node"
+                value={draft.aslPrivateP25Node}
+                onChange={(v) => updateField('aslPrivateP25Node', v)}
+              />
+            </div>
             <FieldInput
               label="Bridge Dashboard Port (TCP)"
               type="number"
