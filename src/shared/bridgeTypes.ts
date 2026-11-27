@@ -16,8 +16,10 @@ export interface BridgeConfig {
   // YSF Reflector 95100
   ysfReflectorId: string;
   ysfReflectorName: string;
+  ysfReflectorDescription: string;
   ysfReflectorHost: string;
   ysfReflectorPort: number;
+  ysfDashboardPort: number;
   ysfMode: YsfMode;
   ysfUsrpTxPort: number;
   ysfUsrpRxPort: number;
@@ -27,6 +29,7 @@ export interface BridgeConfig {
   p25ReflectorId: string;
   p25ReflectorHost: string;
   p25ReflectorPort: number;
+  p25LogPath: string;
   p25Nac: string;
   p25UsrpTxPort: number;
   p25UsrpRxPort: number;
@@ -50,6 +53,8 @@ export interface BridgeConfig {
   githubRepo: string;
   containerName: string;
   networkModeHost: boolean;
+  includeReflectorContainers: boolean;
+  includeCasaOsMetadata: boolean;
   dashboardPort: number;
   timezone: string;
 }

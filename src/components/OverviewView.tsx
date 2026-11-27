@@ -38,8 +38,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const aslReady = isRunning('asterisk-usrp');
   const mmdvmReady = isRunning('mmdvm_bridge');
   const vocoderReady = config.vocoderEngine === 'ambe-usb' || isRunning('md380-emu');
-  const ysfReady = mmdvmReady && vocoderReady && isRunning('analog_bridge_ysf') && isRunning('ysfgateway');
-  const p25Ready = mmdvmReady && isRunning('analog_bridge_p25') && isRunning('p25gateway');
+  const ysfContainerOk = !config.includeReflectorContainers || isRunning('ysfreflector-with-dashboard');
+  const p25ContainerOk = !config.includeReflectorContainers || isRunning('tg9510');
+  const ysfReady = mmdvmReady && vocoderReady && ysfContainerOk && isRunning('analog_bridge_ysf') && isRunning('ysfgateway');
+  const p25Ready = mmdvmReady && p25ContainerOk && isRunning('analog_bridge_p25') && isRunning('p25gateway');
 
   const filteredQsos = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -420,13 +422,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 strokeWidth={ysfPathActive ? 2 : 1.2}
               />
               <text x="14" y="22" fontSize="11" fontWeight="600" fill="#475569" fontFamily="DM Sans, sans-serif">
-                Yaesu System Fusion
+                YSF Docker · {config.ysfReflectorName} ({config.ysfReflectorDescription})
               </text>
               <text x="14" y="44" fontSize="16" fontWeight="700" fill="#0F172A" fontFamily="JetBrains Mono, monospace">
                 YSF {config.ysfReflectorId}
               </text>
               <text x="14" y="62" fontSize="10.5" fill="#64748B" fontFamily="JetBrains Mono, monospace">
-                UDP {config.ysfReflectorPort} · {config.ysfMode}
+                UDP {config.ysfReflectorPort} · UI :{config.ysfDashboardPort}
               </text>
               <text
                 x="14"
@@ -457,7 +459,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 strokeWidth={p25PathActive ? 2 : 1.2}
               />
               <text x="14" y="22" fontSize="11" fontWeight="600" fill="#475569" fontFamily="DM Sans, sans-serif">
-                APCO Project 25
+                P25 Docker · TG{config.p25ReflectorId}
               </text>
               <text x="14" y="44" fontSize="16" fontWeight="700" fill="#0F172A" fontFamily="JetBrains Mono, monospace">
                 P25 {config.p25ReflectorId}

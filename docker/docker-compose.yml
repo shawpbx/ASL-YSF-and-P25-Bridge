@@ -1,4 +1,12 @@
 # Repository: https://github.com/shawpbx/ASL-YSF-and-P25-Bridge
+# Unified Stack: AllStarLink 20800 Bridge + YSF Reflector 95100 (IEARG) + P25 Reflector TG9510
+
+networks:
+  default:
+    external: false
+    ipam: {}
+    name: YSFReflector
+
 services:
   asl-crossmode-bridge:
     image: ghcr.io/shawpbx/asl-ysf-and-p25-bridge:latest
@@ -7,13 +15,17 @@ services:
       dockerfile: Dockerfile
     container_name: asl20800-crossmode-bridge
     restart: unless-stopped
+    depends_on:
+      - tg9510
+      - ysfreflector-with-dashboard
     network_mode: host
     environment:
       - TZ=UTC
       - ASL_NODE=20800
       - YSF_REFLECTOR=95100
+      - YSF_REFLECTOR_NAME=IEARG
       - P25_REFLECTOR=9510
-      - BRIDGE_CALLSIGN=W1AW
+      - BRIDGE_CALLSIGN=KE6UPI
       - BRIDGE_DMR_ID=3100001
       - PORT=3000
     volumes:
@@ -26,6 +38,47 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  tg9510:
+    container_name: TG9510
+    image: corrosive/docker-p25reflector
+    networks:
+      - default
+    ports:
+      - "41000:41000/udp"
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    volumes:
+      - /var/log/P25Reflector:/var/log/P25Reflector
+
+  ysfreflector-with-dashboard:
+    container_name: ysfreflector-with-dashboard
+    image: ghcr.io/neilbartley/ysfreflector-with-dashboard:latest
+    environment:
+      REFLECTOR_DESCRIPTION: KE6UPI
+      REFLECTOR_NAME: IEARG
+    networks:
+      - default
+    ports:
+      - mode: ingress
+        protocol: udp
+        published: "42000"
+        target: 42000
+      - mode: ingress
+        protocol: tcp
+        published: "42080"
+        target: 80
+    restart: unless-stopped
+    volumes: []
+
 volumes:
   bridge_logs:
   bridge_data:
+
+x-casaos:
+  is_uncontrolled: false
+  main: ysfreflector-with-dashboard
+  port_map: "42080"
+  store_app_id: upbeat_kurt
+  title:
+    custom: YSFReflector

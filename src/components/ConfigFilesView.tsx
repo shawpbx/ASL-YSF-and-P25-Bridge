@@ -147,6 +147,24 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
               />
               <span className="text-xs text-slate-700">Use Docker host networking</span>
             </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draft.includeReflectorContainers}
+                onChange={(e) => updateField('includeReflectorContainers', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-700"
+              />
+              <span className="text-xs text-slate-700">Bundle YSF & P25 Reflector containers</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draft.includeCasaOsMetadata}
+                onChange={(e) => updateField('includeCasaOsMetadata', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-700"
+              />
+              <span className="text-xs text-slate-700">Include x-casaos compose metadata</span>
+            </label>
           </div>
 
           {/* AllStarLink Node 20800 */}
@@ -174,12 +192,18 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
               value={draft.aslHost}
               onChange={(v) => updateField('aslHost', v)}
             />
+            <FieldInput
+              label="Bridge Dashboard Port (TCP)"
+              type="number"
+              value={String(draft.dashboardPort)}
+              onChange={(v) => updateField('dashboardPort', Number(v) || 3000)}
+            />
           </div>
 
           {/* YSF Reflector 95100 */}
           <div className="space-y-3">
             <div className="text-xs font-semibold text-slate-900 pb-1 border-b border-slate-100">
-              YSF Reflector Endpoint
+              YSF Reflector Docker (ysfreflector-with-dashboard)
             </div>
             <FieldInput
               label="YSF Reflector ID"
@@ -187,27 +211,40 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
               onChange={(v) => updateField('ysfReflectorId', v)}
             />
             <FieldInput
-              label="YSF Reflector Name"
+              label="REFLECTOR_NAME"
               value={draft.ysfReflectorName}
               onChange={(v) => updateField('ysfReflectorName', v)}
+            />
+            <FieldInput
+              label="REFLECTOR_DESCRIPTION"
+              value={draft.ysfReflectorDescription}
+              onChange={(v) => updateField('ysfReflectorDescription', v)}
             />
             <FieldInput
               label="YSF Reflector Host / IP"
               value={draft.ysfReflectorHost}
               onChange={(v) => updateField('ysfReflectorHost', v)}
             />
-            <FieldInput
-              label="YSF Reflector UDP Port"
-              type="number"
-              value={String(draft.ysfReflectorPort)}
-              onChange={(v) => updateField('ysfReflectorPort', Number(v) || 42000)}
-            />
+            <div className="grid grid-cols-2 gap-2.5">
+              <FieldInput
+                label="YSF UDP Port"
+                type="number"
+                value={String(draft.ysfReflectorPort)}
+                onChange={(v) => updateField('ysfReflectorPort', Number(v) || 42000)}
+              />
+              <FieldInput
+                label="YSF UI Port"
+                type="number"
+                value={String(draft.ysfDashboardPort)}
+                onChange={(v) => updateField('ysfDashboardPort', Number(v) || 42080)}
+              />
+            </div>
           </div>
 
           {/* P25 Reflector 9510 */}
           <div className="space-y-3">
             <div className="text-xs font-semibold text-slate-900 pb-1 border-b border-slate-100">
-              P25 Reflector Endpoint
+              P25 Reflector Docker (TG9510)
             </div>
             <FieldInput
               label="P25 Reflector / TG ID"
@@ -226,10 +263,9 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
               onChange={(v) => updateField('p25ReflectorPort', Number(v) || 41000)}
             />
             <FieldInput
-              label="Dashboard Port (TCP)"
-              type="number"
-              value={String(draft.dashboardPort)}
-              onChange={(v) => updateField('dashboardPort', Number(v) || 3000)}
+              label="Host Log Volume Path"
+              value={draft.p25LogPath}
+              onChange={(v) => updateField('p25LogPath', v)}
             />
           </div>
         </div>

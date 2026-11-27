@@ -90,16 +90,22 @@ export const DockerStackView: React.FC<DockerStackViewProps> = ({
       purpose: 'IMBE 7200 bps frames & P25 TG routing',
     },
     {
-      channel: `YSFGateway <-> YSF Reflector ${config.ysfReflectorId}`,
+      channel: `YSFGateway <-> ysfreflector-with-dashboard (${config.ysfReflectorName})`,
       protocol: 'YSF UDP',
-      binding: `4200 -> ${config.ysfReflectorHost}:${config.ysfReflectorPort}`,
-      purpose: 'Yaesu System Fusion reflector link',
+      binding: `Client ${config.ysfReflectorPort === 42000 ? 42001 : 42000} -> ${config.ysfReflectorHost}:${config.ysfReflectorPort}`,
+      purpose: `Yaesu System Fusion reflector ${config.ysfReflectorId} (${config.ysfReflectorDescription})`,
     },
     {
-      channel: `P25Gateway <-> P25 Reflector ${config.p25ReflectorId}`,
+      channel: `YSF Reflector Web Dashboard (${config.ysfReflectorName})`,
+      protocol: 'HTTP TCP',
+      binding: `0.0.0.0:${config.ysfDashboardPort} -> 80`,
+      purpose: 'ghcr.io/neilbartley/ysfreflector-with-dashboard UI (CasaOS port_map)',
+    },
+    {
+      channel: `P25Gateway <-> TG${config.p25ReflectorId} (corrosive/docker-p25reflector)`,
       protocol: 'P25 UDP',
       binding: `42020 -> ${config.p25ReflectorHost}:${config.p25ReflectorPort}`,
-      purpose: `APCO P25 static TG ${config.p25ReflectorId} (NAC ${config.p25Nac})`,
+      purpose: `APCO P25 static TG ${config.p25ReflectorId} (NAC ${config.p25Nac}) · logs ${config.p25LogPath}`,
     },
     {
       channel: 'md380-emu Vocoder Server',

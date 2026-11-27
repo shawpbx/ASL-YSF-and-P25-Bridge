@@ -125,6 +125,34 @@ let daemons: DaemonProcess[] = [
     ports: 'UDP 42020 -> 41000',
     configFile: 'config/P25Gateway.ini',
   },
+  {
+    id: 'ysfreflector-with-dashboard',
+    name: 'YSFReflector Container (IEARG)',
+    binary: 'ghcr.io/neilbartley/ysfreflector-with-dashboard:latest',
+    role: 'YSF Reflector 95100 (IEARG / KE6UPI) + Web Dashboard on port 42080',
+    leg: 'YSF',
+    status: 'running',
+    pid: 2041,
+    uptimeSec: 310940,
+    cpuPercent: 0.8,
+    memMb: 32.4,
+    ports: 'UDP 42000 · TCP 42080->80',
+    configFile: 'docker-compose.yml',
+  },
+  {
+    id: 'tg9510',
+    name: 'P25Reflector Container (TG9510)',
+    binary: 'corrosive/docker-p25reflector',
+    role: 'P25 Reflector TG9510 container with /var/log/P25Reflector volume',
+    leg: 'P25',
+    status: 'running',
+    pid: 2058,
+    uptimeSec: 310940,
+    cpuPercent: 0.4,
+    memMb: 14.2,
+    ports: 'UDP 41000->41000',
+    configFile: 'docker-compose.yml',
+  },
 ];
 
 let activeTx: ActiveTransmission | null = null;
@@ -287,8 +315,11 @@ function getActiveLegHealth(): { asl: boolean; ysf: boolean; p25: boolean } {
   const coreOk = isDaemonRunning('mmdvm_bridge');
   const aslOk = isDaemonRunning('asterisk-usrp');
   const vocoderOk = config.vocoderEngine === 'ambe-usb' || isDaemonRunning('md380-emu');
-  const ysfOk = coreOk && vocoderOk && isDaemonRunning('analog_bridge_ysf') && isDaemonRunning('ysfgateway');
-  const p25Ok = coreOk && isDaemonRunning('analog_bridge_p25') && isDaemonRunning('p25gateway');
+  const ysfContainerOk = !config.includeReflectorContainers || isDaemonRunning('ysfreflector-with-dashboard');
+  const p25ContainerOk = !config.includeReflectorContainers || isDaemonRunning('tg9510');
+  const ysfOk =
+    coreOk && vocoderOk && ysfContainerOk && isDaemonRunning('analog_bridge_ysf') && isDaemonRunning('ysfgateway');
+  const p25Ok = coreOk && p25ContainerOk && isDaemonRunning('analog_bridge_p25') && isDaemonRunning('p25gateway');
   return { asl: aslOk, ysf: ysfOk, p25: p25Ok };
 }
 
@@ -534,6 +565,22 @@ async function startServer() {
           ...d,
           role: `APCO Project 25 reflector link statically pinned to P25 ${config.p25ReflectorId}`,
           ports: `UDP 42020 -> ${config.p25ReflectorPort}`,
+        };
+      }
+      if (d.id === 'ysfreflector-with-dashboard') {
+        return {
+          ...d,
+          name: `YSFReflector Container (${config.ysfReflectorName})`,
+          role: `YSF Reflector ${config.ysfReflectorId} (${config.ysfReflectorName} / ${config.ysfReflectorDescription}) + Web Dashboard on port ${config.ysfDashboardPort}`,
+          ports: `UDP ${config.ysfReflectorPort} · TCP ${config.ysfDashboardPort}->80`,
+        };
+      }
+      if (d.id === 'tg9510') {
+        return {
+          ...d,
+          name: `P25Reflector Container (TG${config.p25ReflectorId})`,
+          role: `P25 Reflector TG${config.p25ReflectorId} container with ${config.p25LogPath} volume`,
+          ports: `UDP ${config.p25ReflectorPort}->41000`,
         };
       }
       return d;
