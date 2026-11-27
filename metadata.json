@@ -1,0 +1,6 @@
+{
+  "name": "ASL 20800 Cross-Mode Bridge",
+  "description": "Dockerized AllStarLink Node 20800 to YSF Reflector 95100 and P25 Reflector 9510 cross-mode audio transcoding bridge and monitoring dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

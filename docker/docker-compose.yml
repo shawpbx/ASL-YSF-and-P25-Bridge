@@ -1,0 +1,29 @@
+services:
+  asl-crossmode-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asl20800-crossmode-bridge
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TZ=UTC
+      - ASL_NODE=20800
+      - YSF_REFLECTOR=95100
+      - P25_REFLECTOR=9510
+      - BRIDGE_CALLSIGN=W1AW
+      - BRIDGE_DMR_ID=3100001
+      - PORT=3000
+    volumes:
+      - ./config:/opt/bridge/config:ro
+      - bridge_logs:/var/log/dvswitch
+      - bridge_data:/var/lib/dvswitch
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bridge_logs:
+  bridge_data:
