@@ -1,5 +1,7 @@
+# Repository: https://github.com/shawpbx/ASL-YSF-and-P25-Bridge
 services:
   asl-crossmode-bridge:
+    image: ghcr.io/shawpbx/asl-ysf-and-p25-bridge:latest
     build:
       context: .
       dockerfile: Dockerfile

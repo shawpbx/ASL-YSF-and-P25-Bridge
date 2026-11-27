@@ -1,0 +1,47 @@
+# AllStarLink Node 20800 <-> YSF 95100 & P25 9510 Cross-Mode Bridge + Dashboard
+FROM node:22-bookworm-slim AS builder
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci || npm install
+COPY . .
+RUN npm run build
+
+FROM node:22-bookworm-slim
+
+LABEL org.opencontainers.image.source="https://github.com/shawpbx/ASL-YSF-and-P25-Bridge" \
+      org.opencontainers.image.title="ASL 20800 to YSF 95100 and P25 9510 Bridge" \
+      org.opencontainers.image.description="AllStarLink Node 20800 to YSF 95100 and P25 9510 cross-mode bridge with monitoring dashboard"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NODE_ENV=production \
+    PORT=3000 \
+    TZ=UTC
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    supervisor \
+    procps \
+    iproute2 \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/bridge/dashboard
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.ts ./
+COPY --from=builder /app/src/shared ./src/shared
+COPY --from=builder /app/docker ./docker
+
+RUN mkdir -p /var/log/dvswitch /var/lib/dvswitch /var/log/supervisor
+
+EXPOSE 3000/tcp
+EXPOSE 32001/udp 34001/udp
+EXPOSE 32002/udp 34002/udp
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
+
+CMD ["npx", "tsx", "server.ts"]

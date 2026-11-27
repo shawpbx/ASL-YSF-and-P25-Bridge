@@ -38,6 +38,7 @@ export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
   useAgc: true,
   jitterBufferMs: 40,
   timeoutTimerSec: 180,
+  githubRepo: 'shawpbx/ASL-YSF-and-P25-Bridge',
   containerName: 'asl20800-crossmode-bridge',
   networkModeHost: true,
   dashboardPort: 3000,
@@ -65,8 +66,15 @@ export function generateAllBridgeFiles(cfg: BridgeConfig): GeneratedFile[] {
       - "${cfg.ysfReflectorPort}:${cfg.ysfReflectorPort}/udp"
       - "${cfg.p25ReflectorPort}:${cfg.p25ReflectorPort}/udp"`;
 
+  const repoSlug = (cfg.githubRepo || 'shawpbx/ASL-YSF-and-P25-Bridge').trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+  const ghcrImage = `ghcr.io/${repoSlug.toLowerCase()}:latest`;
+
   const dockerfile = `# AllStarLink Node ${cfg.aslNode} <-> YSF ${cfg.ysfReflectorId} & P25 ${cfg.p25ReflectorId} Cross-Mode Bridge
 FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.source="https://github.com/${repoSlug}" \\
+      org.opencontainers.image.title="ASL ${cfg.aslNode} to YSF ${cfg.ysfReflectorId} and P25 ${cfg.p25ReflectorId} Bridge" \\
+      org.opencontainers.image.description="Dockerized AllStarLink Node ${cfg.aslNode} cross-mode bridge for YSF ${cfg.ysfReflectorId} and P25 ${cfg.p25ReflectorId}"
 
 ENV DEBIAN_FRONTEND=noninteractive \\
     TZ=${cfg.timezone}
@@ -122,11 +130,15 @@ EXPOSE ${cfg.p25UsrpTxPort}/udp ${cfg.p25UsrpRxPort}/udp
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 `;
 
-  const dockerCompose = `services:
+  const dockerCompose = `# Repository: https://github.com/${repoSlug}
+services:
   asl-crossmode-bridge:
+    image: ${ghcrImage}
     build:
       context: .
       dockerfile: Dockerfile
+      # Or build directly from GitHub without cloning:
+      # context: https://github.com/${repoSlug}.git#main
     container_name: ${cfg.containerName}
     restart: unless-stopped
 ${networkBlock}
@@ -151,6 +163,65 @@ ${ambeUsbBlock}    environment:
 volumes:
   bridge_logs:
   bridge_data:
+`;
+
+  const githubWorkflowYml = `name: Build and Publish ASL-YSF-P25 Bridge Image
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${repoSlug.toLowerCase()}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch Raspberry Pi / x86_64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: \${{ env.REGISTRY }}
+          username: \${{ github.actor }}
+          password: \${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: \${{ steps.meta.outputs.tags }}
+          labels: \${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 `;
 
   const supervisordConf = `[supervisord]
@@ -572,23 +643,44 @@ Production Docker stack for bridging **AllStarLink Node ${cfg.aslNode}** to **YS
 
 ## Deployment Steps
 
-1. Merge \`asterisk/rpt.conf.snippet\` into \`/etc/asterisk/rpt.conf\` on your AllStarLink Node ${cfg.aslNode} host and run:
+1. Clone the repository on your AllStarLink Node ${cfg.aslNode} host:
+   \`\`\`bash
+   git clone https://github.com/${repoSlug}.git
+   cd ${repoSlug.split('/').pop() || 'ASL-YSF-and-P25-Bridge'}
+   \`\`\`
+2. Merge \`asterisk/rpt.conf.snippet\` into \`/etc/asterisk/rpt.conf\` on your AllStarLink Node ${cfg.aslNode} host and run:
    \`\`\`bash
    sudo asterisk -rx "rpt reload"
    \`\`\`
-2. Confirm your YSF (\`${cfg.ysfReflectorHost}:${cfg.ysfReflectorPort}\`) and P25 (\`${cfg.p25ReflectorHost}:${cfg.p25ReflectorPort}\`) reflector hostnames in \`config/YSFHosts.txt\` and \`config/P25Hosts.txt\`.
-3. Launch the Docker container:
+3. Confirm your YSF (\`${cfg.ysfReflectorHost}:${cfg.ysfReflectorPort}\`) and P25 (\`${cfg.p25ReflectorHost}:${cfg.p25ReflectorPort}\`) reflector hostnames in \`config/YSFHosts.txt\` and \`config/P25Hosts.txt\`.
+4. Pull from GHCR (\`${ghcrImage}\`) or build locally and start the container:
    \`\`\`bash
    docker compose up -d --build
    \`\`\`
-4. Verify all daemons are running:
+5. Verify all daemons are running:
    \`\`\`bash
    docker exec ${cfg.containerName} supervisorctl status
    \`\`\`
-5. Open the monitoring dashboard at \`http://<host-ip>:${cfg.dashboardPort}\`.
+6. Open the monitoring dashboard at \`http://<host-ip>:${cfg.dashboardPort}\`.
 `;
 
   return [
+    {
+      path: 'docker-compose.yml',
+      title: 'docker-compose.yml',
+      category: 'Docker',
+      language: 'yaml',
+      description: `Compose stack linked to ${ghcrImage} with host networking or explicit UDP USRP/reflector port mappings.`,
+      content: dockerCompose,
+    },
+    {
+      path: '.github/workflows/docker-publish.yml',
+      title: 'GitHub Actions (GHCR)',
+      category: 'Docker',
+      language: 'yaml',
+      description: `Multi-arch (amd64/arm64) CI workflow publishing ${ghcrImage} from github.com/${repoSlug}.`,
+      content: githubWorkflowYml,
+    },
     {
       path: 'Dockerfile',
       title: 'Dockerfile',
@@ -596,14 +688,6 @@ Production Docker stack for bridging **AllStarLink Node ${cfg.aslNode}** to **YS
       language: 'dockerfile',
       description: 'Debian Bookworm container bundling DVSwitch, md380-emu, YSFGateway, P25Gateway, supervisor, and dashboard.',
       content: dockerfile,
-    },
-    {
-      path: 'docker-compose.yml',
-      title: 'docker-compose.yml',
-      category: 'Docker',
-      language: 'yaml',
-      description: 'Service definition with host networking or explicit UDP USRP/reflector port mappings and optional AMBE USB passthrough.',
-      content: dockerCompose,
     },
     {
       path: 'supervisord.conf',

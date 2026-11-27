@@ -47,6 +47,7 @@ export interface BridgeConfig {
   jitterBufferMs: number;
   timeoutTimerSec: number;
   // Docker Container Settings
+  githubRepo: string;
   containerName: string;
   networkModeHost: boolean;
   dashboardPort: number;

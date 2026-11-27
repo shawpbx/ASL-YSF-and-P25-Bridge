@@ -129,6 +129,11 @@ export const ConfigFilesView: React.FC<ConfigFilesViewProps> = ({ config, onSave
               onChange={(v) => updateField('dmrId', v)}
             />
             <FieldInput
+              label="GitHub Repository (owner/repo)"
+              value={draft.githubRepo}
+              onChange={(v) => updateField('githubRepo', v)}
+            />
+            <FieldInput
               label="Docker Container Name"
               value={draft.containerName}
               onChange={(v) => updateField('containerName', v)}

@@ -1,0 +1,31 @@
+# Repository: https://github.com/shawpbx/ASL-YSF-and-P25-Bridge
+services:
+  asl-crossmode-bridge:
+    image: ghcr.io/shawpbx/asl-ysf-and-p25-bridge:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asl20800-crossmode-bridge
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TZ=UTC
+      - NODE_ENV=production
+      - PORT=3000
+      - ASL_NODE=20800
+      - YSF_REFLECTOR=95100
+      - P25_REFLECTOR=9510
+      - BRIDGE_CALLSIGN=W1AW
+      - BRIDGE_DMR_ID=3100001
+    volumes:
+      - bridge_logs:/var/log/dvswitch
+      - bridge_data:/var/lib/dvswitch
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bridge_logs:
+  bridge_data:
